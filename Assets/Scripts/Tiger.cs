@@ -47,7 +47,7 @@ public class Tiger : MonoBehaviour
         time += Time.deltaTime;
         if (time >= roarSoundTime)
         {
-            AudioSource.PlayClipAtPoint(roarSoundEffect, transform.position);
+            AudioSource.PlayClipAtPoint(roarSoundEffect, transform.position, 1f);
             time = 0f;
         }
     }
