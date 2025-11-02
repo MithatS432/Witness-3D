@@ -3,13 +3,23 @@ using UnityEngine;
 public class Player : MonoBehaviour
 {
     [Header("Components")]
-    private Rigidbody rb;
     private Animator anim;
+    // YENİ: CharacterController'ı buraya ekledik
+    private CharacterController controller;
 
     [Header("Player Settings")]
-    public float speed = 5f;
-    public float jumpForce = 7f;
-    public bool isGround;
+    public float walkSpeed = 5f;
+    public float runSpeed = 10f;
+    // Zıplama hissini iyileştirmek için varsayılan değeri artırdık
+    public float jumpForce = 12f;
+
+    // Artık kullanılmıyor ama kalsın (GroundCheck kaldırıldı)
+    public float groundCheckDistance = 0.2f;
+    public LayerMask groundMask;
+
+    private float verticalVelocity;
+    // Artık kullanılmıyor (controller.isGrounded kullanılıyor)
+    // private bool isGrounded;
 
     [Header("Mouse Look")]
     public float mouseSensitivity = 100f;
@@ -19,74 +29,71 @@ public class Player : MonoBehaviour
     public Transform cameraTransform;
 
     [Header("Physics Settings")]
-    public float gravityMultiplier = 2.5f;
-    public float lowJumpMultiplier = 2f;
+    // Hızlı düşüş için varsayılan değeri artırdık
+    public float gravity = -25f;
 
     void Start()
     {
-        rb = GetComponent<Rigidbody>();
         anim = GetComponent<Animator>();
-
-        rb.freezeRotation = true;
+        // CharacterController referansını al
+        controller = GetComponent<CharacterController>();
 
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
     }
 
-    void FixedUpdate()
+    void Update()
     {
-        float x = Input.GetAxis("Horizontal");
-        float z = Input.GetAxis("Vertical");
-
-        Vector3 move = transform.right * x + transform.forward * z;
-        rb.MovePosition(transform.position + move * speed * Time.fixedDeltaTime);
+        HandleMouseLook();
+        HandleMovement();
+        HandleJump();
+        ApplyGravity();
     }
 
-    void Update()
+    void HandleMouseLook()
     {
         float mouseX = Input.GetAxis("Mouse X") * mouseSensitivity * Time.deltaTime;
         float mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity * Time.deltaTime;
 
         transform.Rotate(Vector3.up * mouseX);
-
         rotationY -= mouseY;
         rotationY = Mathf.Clamp(rotationY, -60f, 60f);
         cameraTransform.localRotation = Quaternion.Euler(rotationY, 0f, 0f);
-
-        if (Input.GetKeyDown(KeyCode.Space) && isGround)
-        {
-            Jump();
-        }
-
-        ApplyBetterJumpPhysics();
-
-        speed = Input.GetKey(KeyCode.LeftShift) ? 10f : 5f;
-
-        //anim.SetFloat("Speed", new Vector2(Input.GetAxis("Horizontal"), Input.GetAxis("Vertical")).magnitude);
     }
 
-    void Jump()
+    void HandleMovement()
     {
-        rb.linearVelocity = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z);
-        rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
-        isGround = false;
+        float x = Input.GetAxis("Horizontal");
+        float z = Input.GetAxis("Vertical");
+        float currentSpeed = Input.GetKey(KeyCode.LeftShift) ? runSpeed : walkSpeed;
+
+        // Yatay hareket vektörünü oluştur
+        Vector3 move = transform.right * x + transform.forward * z;
+
+        // CharacterController.Move() ile yatay hareketi uygula.
+        // Bu, çarpışma kontrolü yapıldığı için platformlardan geçmeyi engeller.
+        controller.Move(move * currentSpeed * Time.deltaTime);
     }
 
-    void ApplyBetterJumpPhysics()
+    void HandleJump()
     {
-        if (rb.linearVelocity.y < 0)
+        // CharacterController.isGrounded özelliğini kullan
+        if (Input.GetKeyDown(KeyCode.Space) && controller.isGrounded)
         {
-            rb.linearVelocity += Vector3.up * Physics.gravity.y * (gravityMultiplier - 1) * Time.deltaTime;
-        }
-        else if (rb.linearVelocity.y > 0 && !Input.GetKey(KeyCode.Space))
-        {
-            rb.linearVelocity += Vector3.up * Physics.gravity.y * (lowJumpMultiplier - 1) * Time.deltaTime;
+            verticalVelocity = jumpForce;
         }
     }
 
-    private void OnCollisionEnter(Collision other)
+    void ApplyGravity()
     {
-        if (other.gameObject.CompareTag("Ground"))
-            isGround = true;
+        if (controller.isGrounded && verticalVelocity < 0)
+        {
+            verticalVelocity = -2f;
+        }
+
+        verticalVelocity += gravity * Time.deltaTime;
+
+        controller.Move(Vector3.up * verticalVelocity * Time.deltaTime);
     }
+
 }
