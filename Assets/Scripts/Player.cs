@@ -4,22 +4,24 @@ public class Player : MonoBehaviour
 {
     [Header("Components")]
     private Animator anim;
-    // YENİ: CharacterController'ı buraya ekledik
     private CharacterController controller;
 
     [Header("Player Settings")]
     public float walkSpeed = 5f;
     public float runSpeed = 10f;
-    // Zıplama hissini iyileştirmek için varsayılan değeri artırdık
     public float jumpForce = 12f;
 
-    // Artık kullanılmıyor ama kalsın (GroundCheck kaldırıldı)
     public float groundCheckDistance = 0.2f;
     public LayerMask groundMask;
 
     private float verticalVelocity;
-    // Artık kullanılmıyor (controller.isGrounded kullanılıyor)
-    // private bool isGrounded;
+    public AudioClip jumpSound;
+
+    [Header("Footstep Settings")]
+    public AudioClip[] footstepSounds;
+    public float walkStepRate = 0.5f;
+    public float runStepRate = 0.3f;
+    private float footstepTimer = 0f;
 
     [Header("Mouse Look")]
     public float mouseSensitivity = 100f;
@@ -29,13 +31,11 @@ public class Player : MonoBehaviour
     public Transform cameraTransform;
 
     [Header("Physics Settings")]
-    // Hızlı düşüş için varsayılan değeri artırdık
     public float gravity = -25f;
 
     void Start()
     {
         anim = GetComponent<Animator>();
-        // CharacterController referansını al
         controller = GetComponent<CharacterController>();
 
         Cursor.lockState = CursorLockMode.Locked;
@@ -65,21 +65,20 @@ public class Player : MonoBehaviour
     {
         float x = Input.GetAxis("Horizontal");
         float z = Input.GetAxis("Vertical");
-        float currentSpeed = Input.GetKey(KeyCode.LeftShift) ? runSpeed : walkSpeed;
+        bool isRunning = Input.GetKey(KeyCode.LeftShift);
+        float currentSpeed = isRunning ? runSpeed : walkSpeed;
 
-        // Yatay hareket vektörünü oluştur
         Vector3 move = transform.right * x + transform.forward * z;
-
-        // CharacterController.Move() ile yatay hareketi uygula.
-        // Bu, çarpışma kontrolü yapıldığı için platformlardan geçmeyi engeller.
         controller.Move(move * currentSpeed * Time.deltaTime);
+
+        HandleFootsteps(move.magnitude, isRunning);
     }
 
     void HandleJump()
     {
-        // CharacterController.isGrounded özelliğini kullan
         if (Input.GetKeyDown(KeyCode.Space) && controller.isGrounded)
         {
+            AudioSource.PlayClipAtPoint(jumpSound, transform.position);
             verticalVelocity = jumpForce;
         }
     }
@@ -92,8 +91,32 @@ public class Player : MonoBehaviour
         }
 
         verticalVelocity += gravity * Time.deltaTime;
-
         controller.Move(Vector3.up * verticalVelocity * Time.deltaTime);
     }
 
+    void HandleFootsteps(float moveAmount, bool isRunning)
+    {
+        if (!controller.isGrounded || moveAmount == 0)
+        {
+            footstepTimer = 0f;
+            return;
+        }
+
+        float stepRate = isRunning ? runStepRate : walkStepRate;
+        footstepTimer += Time.deltaTime;
+
+        if (footstepTimer >= stepRate)
+        {
+            footstepTimer = 0f;
+            PlayFootstepSound();
+        }
+    }
+
+    void PlayFootstepSound()
+    {
+        if (footstepSounds.Length == 0) return;
+
+        int index = Random.Range(0, footstepSounds.Length);
+        AudioSource.PlayClipAtPoint(footstepSounds[index], transform.position);
+    }
 }

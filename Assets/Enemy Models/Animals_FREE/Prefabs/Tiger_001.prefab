@@ -993,9 +993,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   player: {fileID: 0}
-  speed: 8
+  speed: 10
   rotationSpeed: 10
   catchDistance: 2
+  gravity: -9.81
+  roarSoundEffect: {fileID: 8300000, guid: 4e374632847177f4bbcf8655df862404, type: 3}
 --- !u!95 &2728073405179952847
 Animator:
   serializedVersion: 7
