@@ -15,13 +15,8 @@ public class Player : MonoBehaviour
     public LayerMask groundMask;
 
     private float verticalVelocity;
+    private bool isGrounded;
     public AudioClip jumpSound;
-
-    [Header("Footstep Settings")]
-    public AudioClip[] footstepSounds;
-    public float walkStepRate = 0.5f;
-    public float runStepRate = 0.3f;
-    private float footstepTimer = 0f;
 
     [Header("Mouse Look")]
     public float mouseSensitivity = 100f;
@@ -32,6 +27,16 @@ public class Player : MonoBehaviour
 
     [Header("Physics Settings")]
     public float gravity = -25f;
+
+    [Header("Wall Run Settings")]
+    public float wallRunSpeed = 8f;
+    public float wallRunDuration = 3f; // Süreyi uzattım
+    public float wallCheckDistance = 0.6f;
+    public LayerMask wallMask;
+    private bool isWallRunning = false;
+    private float wallRunTimer = 0f;
+    private Vector3 wallNormal;
+    private bool canWallRun = true;
 
     void Start()
     {
@@ -44,10 +49,31 @@ public class Player : MonoBehaviour
 
     void Update()
     {
+        HandleGroundCheck();
         HandleMouseLook();
-        HandleMovement();
-        HandleJump();
-        ApplyGravity();
+
+        if (!isWallRunning)
+        {
+            HandleMovement();
+            HandleJump();
+            ApplyGravity();
+        }
+
+        HandleWallRun();
+    }
+
+    void HandleGroundCheck()
+    {
+        // Wall run sırasında ground check'i yapma!
+        if (isWallRunning) return;
+
+        Vector3 spherePosition = transform.position + Vector3.down * (controller.height / 2 - 0.1f);
+        isGrounded = Physics.CheckSphere(spherePosition, groundCheckDistance, groundMask, QueryTriggerInteraction.Ignore);
+
+        if (isGrounded)
+        {
+            canWallRun = true;
+        }
     }
 
     void HandleMouseLook()
@@ -70,53 +96,166 @@ public class Player : MonoBehaviour
 
         Vector3 move = transform.right * x + transform.forward * z;
         controller.Move(move * currentSpeed * Time.deltaTime);
-
-        HandleFootsteps(move.magnitude, isRunning);
     }
 
     void HandleJump()
     {
-        if (Input.GetKeyDown(KeyCode.Space) && controller.isGrounded)
+        if (Input.GetKeyDown(KeyCode.Space))
         {
-            AudioSource.PlayClipAtPoint(jumpSound, transform.position);
-            verticalVelocity = jumpForce;
+            if (isGrounded)
+            {
+                AudioSource.PlayClipAtPoint(jumpSound, transform.position);
+                verticalVelocity = jumpForce;
+            }
+            else if (isWallRunning)
+            {
+                // Wall run'dan zıplama
+                Vector3 jumpDir = (wallNormal + Vector3.up * 1.5f).normalized;
+                verticalVelocity = jumpForce * 1.2f;
+                controller.Move(jumpDir * 5f * Time.deltaTime);
+                StopWallRun();
+            }
         }
     }
 
     void ApplyGravity()
     {
-        if (controller.isGrounded && verticalVelocity < 0)
+        if (isGrounded && verticalVelocity < 0)
         {
             verticalVelocity = -2f;
         }
+        else if (isWallRunning)
+        {
+            // Wall run sırasında yerçekimi yok
+            verticalVelocity = 0f;
+        }
+        else
+        {
+            verticalVelocity += gravity * Time.deltaTime;
+        }
 
-        verticalVelocity += gravity * Time.deltaTime;
         controller.Move(Vector3.up * verticalVelocity * Time.deltaTime);
     }
 
-    void HandleFootsteps(float moveAmount, bool isRunning)
+    void HandleWallRun()
     {
-        if (!controller.isGrounded || moveAmount == 0)
+        // Wall run devam ediyorsa
+        if (isWallRunning)
         {
-            footstepTimer = 0f;
+            wallRunTimer += Time.deltaTime;
+
+            // Wall run hareketi
+            Vector3 wallForward = Vector3.Cross(wallNormal, Vector3.up).normalized;
+            if (Vector3.Dot(transform.forward, wallForward) < 0)
+                wallForward = -wallForward;
+
+            controller.Move(wallForward * wallRunSpeed * Time.deltaTime);
+
+            // Yapışma efekti - biraz daha güçlü yapalım
+            controller.Move(-wallNormal * 1f * Time.deltaTime);
+
+            // Sonlandırma koşulları - SADECE W bırakıldığında veya süre dolduğunda
+            bool wPressed = Input.GetKey(KeyCode.W);
+            bool wallStillThere = IsNextToWall();
+
+            if (wallRunTimer >= wallRunDuration || !wPressed || !wallStillThere)
+            {
+                StopWallRun();
+            }
+
             return;
         }
 
-        float stepRate = isRunning ? runStepRate : walkStepRate;
-        footstepTimer += Time.deltaTime;
-
-        if (footstepTimer >= stepRate)
+        // Wall run başlatma koşulları
+        if (canWallRun && !isGrounded && verticalVelocity < 0 && Input.GetKey(KeyCode.W))
         {
-            footstepTimer = 0f;
-            PlayFootstepSound();
+            if (CheckForWall(out Vector3 normal))
+            {
+                StartWallRun(normal);
+            }
         }
     }
 
-    void PlayFootstepSound()
+    bool CheckForWall(out Vector3 normal)
     {
-        if (footstepSounds.Length == 0) return;
+        Debug.DrawRay(transform.position, transform.right * wallCheckDistance, Color.red);
+        Debug.DrawRay(transform.position, -transform.right * wallCheckDistance, Color.red);
 
-        int index = Random.Range(0, footstepSounds.Length);
-        AudioSource.PlayClipAtPoint(footstepSounds[index], transform.position);
+        RaycastHit hit;
+
+        // Sağ ve sol tarafları kontrol et
+        if (Physics.Raycast(transform.position, transform.right, out hit, wallCheckDistance, wallMask))
+        {
+            normal = hit.normal;
+            Debug.Log("Sağ duvar bulundu: " + hit.collider.name);
+            return true;
+        }
+
+        if (Physics.Raycast(transform.position, -transform.right, out hit, wallCheckDistance, wallMask))
+        {
+            normal = hit.normal;
+            Debug.Log("Sol duvar bulundu: " + hit.collider.name);
+            return true;
+        }
+
+        normal = Vector3.zero;
+        return false;
+    }
+
+    bool IsNextToWall()
+    {
+        return Physics.Raycast(transform.position, transform.right, wallCheckDistance, wallMask) ||
+               Physics.Raycast(transform.position, -transform.right, wallCheckDistance, wallMask);
+    }
+
+    void StartWallRun(Vector3 normal)
+    {
+        Debug.Log("Wall Run Başladı!");
+
+        isWallRunning = true;
+        wallRunTimer = 0f;
+        wallNormal = normal;
+        verticalVelocity = 0f; // Düşüşü durdur
+
+        // Kamerayı hafif yana yatır
+        float tiltAngle = Vector3.Dot(transform.right, wallNormal) * 15f;
+        cameraTransform.localEulerAngles = new Vector3(rotationY, 0f, tiltAngle);
+    }
+
+    void StopWallRun()
+    {
+        if (!isWallRunning) return;
+
+        Debug.Log("Wall Run Bitti! Süre: " + wallRunTimer + "s");
+
+        isWallRunning = false;
+        canWallRun = false;
+
+        // Kamerayı düzelt
+        cameraTransform.localEulerAngles = new Vector3(rotationY, 0f, 0f);
+
+        // 0.3 saniye sonra tekrar wall run yapabilir
+        Invoke(nameof(ResetWallRun), 0.3f);
+    }
+
+    void ResetWallRun()
+    {
+        canWallRun = true;
+    }
+
+    // Debug için
+    void OnDrawGizmos()
+    {
+        if (controller == null) return;
+
+        // Ground check gizmos
+        Vector3 spherePosition = transform.position + Vector3.down * (controller.height / 2 - 0.1f);
+        Gizmos.color = isGrounded ? Color.green : Color.red;
+        Gizmos.DrawWireSphere(spherePosition, groundCheckDistance);
+
+        // Wall check gizmos
+        Gizmos.color = isWallRunning ? Color.yellow : Color.blue;
+        Gizmos.DrawRay(transform.position, transform.right * wallCheckDistance);
+        Gizmos.DrawRay(transform.position, -transform.right * wallCheckDistance);
     }
 }
